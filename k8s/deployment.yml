@@ -1,0 +1,26 @@
+apiversion:v1
+kind:deployment
+metadata:
+  name:nginx-deployment
+spec:
+  replicas:3 
+  selector:
+    matchLabels:
+      app:nginx
+  template:
+    metadata:
+      labels:
+        app:nginx
+    spec:
+      containers:
+        - name:nginx-container
+          image:nginx:latest
+          ports:
+            - containerPort:80
+# why deployment over replica set?
+# ->if any changes made in this file then after appying the changes, deployment will create new replica set and delete the old replica set.
+
+# replicas creates 3 pods with nginx container running on each pod.
+# Each pod will have a unique IP address and can be accessed using that IP address.
+# template define blueprint for the pods that will be created by the deployment.
+# It specifies the metadata and spec for the pods, including the containers that will run in each pod.

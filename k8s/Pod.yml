@@ -1,0 +1,15 @@
+apiversion:v1
+kind:pod
+metadata:
+  name:nginx-pod
+spec:
+  containers:
+    - name:nginx-container
+      image:nginx:latest
+      ports:
+        - containerPort:80
+    - name:mongo-container
+      image:mongo:latest
+      ports:
+        - containerPort:27017
+# one ec2 having one pod with two containers nginx and mongo

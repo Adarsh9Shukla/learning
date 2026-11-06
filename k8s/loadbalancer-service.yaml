@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-loadbalancer-svc
+spec:
+  type: LoadBalancer
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 80 # Public port exposed by the cloud load balancer
+      targetPort: 80 # Port the Nginx container is listening on
+# cloud environment (like AWS, GCP, or Azure) to automatically spin up a cloud provider load balancer with a public IP.

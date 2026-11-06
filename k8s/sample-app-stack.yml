@@ -1,0 +1,200 @@
+# 1. NAMESPACE SETUP
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app-stack
+# 2. APPLICATION DATABASES & MICROSERVICES
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo-deployment
+  namespace: app-stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:latest
+          ports:
+            - containerPort: 27017
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-service
+  namespace: app-stack
+spec:
+  type: ClusterIP # Internal database only accessible inside the cluster
+  selector:
+    app: mongodb
+  ports:
+    - port: 27017
+      targetPort: 27017
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+  namespace: app-stack
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend-container
+          image: hashicorp/http-echo:latest # Arbitrary lightweight backend echo app
+          args:
+            - "-text=Welcome to the Backend API (Connected to MongoDB)"
+          ports:
+            - containerPort: 5678
+          env:
+            - name: MONGO_URI
+              value: "mongodb://mongo-service:27017" # Connects via ClusterIP Service
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: app-stack
+spec:
+  type: ClusterIP # Kept internal; Ingress will handle the external routing
+  selector:
+    app: backend
+  ports:
+    - port: 80
+      targetPort: 5678
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+  namespace: app-stack
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend-container
+          image: nginx:alpine # Arbitrary frontend web server
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: app-stack
+spec:
+  type: ClusterIP # Kept internal; Ingress will handle the external routing
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+
+---
+
+# 3. NGINX INGRESS CONTROLLER INFRASTRUCTURE
+
+
+# --- INGRESS CONTROLLER DEPLOYMENT ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingress-nginx-controller
+  namespace: app-stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ingress-nginx
+  template:
+    metadata:
+      labels:
+        app: ingress-nginx
+    spec:
+      containers:
+        - name: controller
+          image: registry.k8s.io/ingress-nginx/controller:v1.10.1
+          args:
+            - /nginx-ingress-controller
+            - --election-id=ingress-nginx-leader
+            - --controller-class=k8s.io/ingress-nginx
+            - --ingress-class=nginx
+          ports:
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+---
+# --- CLOUD LOADBALANCER FOR INGRESS ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingress-nginx-loadbalancer
+  namespace: app-stack
+spec:
+  type: LoadBalancer # Provisions an external cloud LoadBalancer (AWS, GCP, Azure)
+  selector:
+    app: ingress-nginx
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: https
+      port: 443
+      targetPort: 443
+
+---
+
+# 4. INGRESS ROUTING RULES (THE TRAFFIC COP)
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  namespace: app-stack
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false" # Set to true if configuring SSL certificates
+spec:
+  rules:
+    - http:
+        paths:
+          # Routes http://<LoadBalancer-IP>/api to the backend microservice
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 80
+          # Routes all other root traffic http://<LoadBalancer-IP>/ to the frontend web app
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 80
